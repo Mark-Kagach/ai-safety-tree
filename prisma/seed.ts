@@ -1,16 +1,14 @@
 import { PrismaClient } from "@prisma/client";
 import bcrypt from "bcryptjs";
 
-const prisma = new PrismaClient();
-
-const SEED_AUTHOR = {
+export const SEED_AUTHOR = {
   username: "arb",
   password: "changeme",
   displayName: "Arb (seed)",
 };
 
-type SeedOutput = { title: string; url?: string; authors?: string };
-type SeedNode = {
+export type SeedOutput = { title: string; url?: string; authors?: string };
+export type SeedNode = {
   slug: string;
   title: string;
   body: string;
@@ -27,7 +25,7 @@ type SeedNode = {
 // review (paper titles + author lists), surfaced via a collapsible toggle
 // on the node's side panel.
 
-const SEED_TREE: SeedNode[] = [
+export const SEED_TREE: SeedNode[] = [
   // ─── Root ────────────────────────────────────────────────────────────────
   {
     slug: "ai-safety",
@@ -2166,55 +2164,60 @@ Notable: Qwen3 is the only Chinese model with a large Western user base; DeepSee
 ];
 
 async function main() {
+  const prisma = new PrismaClient();
+
   // Wipe existing node data so the new tree replaces the old one cleanly.
   // Cascading deletes handle votes/comments/proposals attached to nodes.
-  await prisma.nodeVote.deleteMany();
-  await prisma.comment.deleteMany();
-  await prisma.proposalVote.deleteMany();
-  await prisma.proposal.deleteMany();
-  await prisma.node.deleteMany();
+  try {
+    await prisma.nodeVote.deleteMany();
+    await prisma.comment.deleteMany();
+    await prisma.proposalVote.deleteMany();
+    await prisma.proposal.deleteMany();
+    await prisma.node.deleteMany();
 
-  const passwordHash = await bcrypt.hash(SEED_AUTHOR.password, 10);
-  const author = await prisma.user.upsert({
-    where: { username: SEED_AUTHOR.username },
-    update: {},
-    create: {
-      username: SEED_AUTHOR.username,
-      passwordHash,
-      displayName: SEED_AUTHOR.displayName,
-    },
-  });
-
-  const slugToId: Record<string, string> = {};
-  for (const node of SEED_TREE) {
-    const parentId = node.parentSlug ? slugToId[node.parentSlug] : null;
-    if (node.parentSlug && !parentId) {
-      throw new Error(
-        `Seed misconfigured: ${node.slug} references missing parent ${node.parentSlug}`,
-      );
-    }
-    const created = await prisma.node.create({
-      data: {
-        slug: node.slug,
-        title: node.title,
-        body: node.body,
-        outputs: node.outputs ? JSON.stringify(node.outputs) : null,
-        parentId,
-        authorId: author.id,
-        isSeed: true,
+    const passwordHash = await bcrypt.hash(SEED_AUTHOR.password, 10);
+    const author = await prisma.user.upsert({
+      where: { username: SEED_AUTHOR.username },
+      update: {},
+      create: {
+        username: SEED_AUTHOR.username,
+        passwordHash,
+        displayName: SEED_AUTHOR.displayName,
       },
     });
-    slugToId[node.slug] = created.id;
-  }
 
-  console.log(`Seeded ${SEED_TREE.length} nodes (author: ${author.username}).`);
+    const slugToId: Record<string, string> = {};
+    for (const node of SEED_TREE) {
+      const parentId = node.parentSlug ? slugToId[node.parentSlug] : null;
+      if (node.parentSlug && !parentId) {
+        throw new Error(
+          `Seed misconfigured: ${node.slug} references missing parent ${node.parentSlug}`,
+        );
+      }
+      const created = await prisma.node.create({
+        data: {
+          slug: node.slug,
+          title: node.title,
+          body: node.body,
+          outputs: node.outputs ? JSON.stringify(node.outputs) : null,
+          parentId,
+          authorId: author.id,
+          isSeed: true,
+        },
+      });
+      slugToId[node.slug] = created.id;
+    }
+
+    console.log(`Seeded ${SEED_TREE.length} nodes (author: ${author.username}).`);
+  } finally {
+    await prisma.$disconnect();
+  }
 }
 
-main()
+if (process.argv[1]?.endsWith("seed.ts") || process.argv[1]?.endsWith("seed.js")) {
+  main()
   .catch((e) => {
     console.error(e);
     process.exit(1);
-  })
-  .finally(async () => {
-    await prisma.$disconnect();
   });
+}

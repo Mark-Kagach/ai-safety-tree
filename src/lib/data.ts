@@ -1,8 +1,26 @@
 import { prisma } from "./prisma";
+import type { Prisma } from "@prisma/client";
 import { buildTree, type FlatNode, type TreeNode } from "@/domain/tree";
 import { tallyVotes } from "@/domain/votes";
 import type { TreeViewNode } from "@/components/TreeView";
 import type { SidePanelNode, SidePanelOutput } from "@/components/SidePanel";
+import { SEED_AUTHOR, SEED_TREE } from "../../prisma/seed";
+
+type TreeDbNode = Prisma.NodeGetPayload<{ include: { votes: true } }>;
+type PanelDbNode = Prisma.NodeGetPayload<{
+  include: {
+    author: true;
+    votes: true;
+    comments: { include: { author: true } };
+  };
+}>;
+type ProposalDbNode = Prisma.NodeGetPayload<{
+  include: {
+    author: true;
+    votes: true;
+    _count: { select: { comments: true } };
+  };
+}>;
 
 function parseOutputs(raw: string | null): SidePanelOutput[] {
   if (!raw) return [];
@@ -17,14 +35,69 @@ function parseOutputs(raw: string | null): SidePanelOutput[] {
   }
 }
 
+function fallbackTreeForView(): TreeViewNode[] {
+  const flat: FlatNode[] = SEED_TREE.map((n) => ({
+    id: n.slug,
+    parentId: n.parentSlug,
+    title: n.title,
+  }));
+  const tree = buildTree(flat);
+
+  function decorate(t: TreeNode): TreeViewNode {
+    return {
+      id: t.id,
+      slug: t.id,
+      title: t.title,
+      score: 0,
+      children: t.children.map(decorate),
+    };
+  }
+
+  return tree.map(decorate);
+}
+
+function fallbackNodeBySlug(slug: string): SidePanelNode | null {
+  const seedNode = SEED_TREE.find((n) => n.slug === slug);
+  if (!seedNode) return null;
+
+  return {
+    id: seedNode.slug,
+    slug: seedNode.slug,
+    title: seedNode.title,
+    body: seedNode.body,
+    outputs: seedNode.outputs ?? [],
+    authorUsername: SEED_AUTHOR.username,
+    parentId: seedNode.parentSlug,
+    status: "active",
+    score: 0,
+    alignmentKarma: 0,
+    userVote: 0,
+    comments: [],
+    relatedProposals: [],
+  };
+}
+
+function logDbFallback(context: string, error: unknown) {
+  console.warn(
+    `Database unavailable while loading ${context}; using read-only seed data fallback.`,
+    error,
+  );
+}
+
 export async function getTreeForView(): Promise<TreeViewNode[]> {
-  const nodes = await prisma.node.findMany({
-    // Only "active" nodes appear on the canvas; "proposed" nodes are
-    // surfaced exclusively under their target's "Other Proposals" panel.
-    where: { status: "active" },
-    include: { votes: true },
-    orderBy: { createdAt: "asc" },
-  });
+  let nodes: TreeDbNode[];
+  try {
+    nodes = await prisma.node.findMany({
+      // Only "active" nodes appear on the canvas; "proposed" nodes are
+      // surfaced exclusively under their target's "Other Proposals" panel.
+      where: { status: "active" },
+      include: { votes: true },
+      orderBy: { createdAt: "asc" },
+    });
+  } catch (error) {
+    logDbFallback("tree", error);
+    return fallbackTreeForView();
+  }
 
   const flat: FlatNode[] = nodes.map((n) => ({
     id: n.id,
@@ -63,17 +136,23 @@ export async function getNodeBySlug(
   slug: string,
   currentUserId: string | null,
 ): Promise<SidePanelNode | null> {
-  const node = await prisma.node.findUnique({
-    where: { slug },
-    include: {
-      author: true,
-      votes: true,
-      comments: {
-        include: { author: true },
-        orderBy: { createdAt: "asc" },
+  let node: PanelDbNode | null;
+  try {
+    node = await prisma.node.findUnique({
+      where: { slug },
+      include: {
+        author: true,
+        votes: true,
+        comments: {
+          include: { author: true },
+          orderBy: { createdAt: "asc" },
+        },
       },
-    },
-  });
+    });
+  } catch (error) {
+    logDbFallback(`node ${slug}`, error);
+    return fallbackNodeBySlug(slug);
+  }
   if (!node) return null;
 
   const score = tallyVotes(
@@ -102,14 +181,20 @@ export async function getNodeBySlug(
   };
   if (node.parentId) proposalWhere.OR.push({ parentId: node.parentId });
 
-  const proposed = await prisma.node.findMany({
-    where: proposalWhere,
-    include: {
-      author: true,
-      votes: true,
-      _count: { select: { comments: true } },
-    },
-  });
+  let proposed: ProposalDbNode[];
+  try {
+    proposed = await prisma.node.findMany({
+      where: proposalWhere,
+      include: {
+        author: true,
+        votes: true,
+        _count: { select: { comments: true } },
+      },
+    });
+  } catch (error) {
+    logDbFallback(`related proposals for ${slug}`, error);
+    return fallbackNodeBySlug(slug);
+  }
 
   const relatedProposals = proposed
     // Don't list the node itself in its own proposals.
@@ -152,9 +237,14 @@ export async function getNodeBySlug(
 }
 
 export async function listAllNodesForParentPicker() {
-  const nodes = await prisma.node.findMany({
-    select: { id: true, title: true },
-    orderBy: { createdAt: "asc" },
-  });
-  return nodes;
+  try {
+    const nodes = await prisma.node.findMany({
+      select: { id: true, title: true },
+      orderBy: { createdAt: "asc" },
+    });
+    return nodes;
+  } catch (error) {
+    logDbFallback("parent picker", error);
+    return SEED_TREE.map((n) => ({ id: n.slug, title: n.title }));
+  }
 }
