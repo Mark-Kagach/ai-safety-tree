@@ -15,9 +15,9 @@ const LABEL: Record<Theme, string> = {
 };
 
 const ICON: Record<Theme, string> = {
-  system: "◐",
-  light: "☀",
-  dark: "☾",
+  system: "\u25cf",
+  light: "\u2600",
+  dark: "\u263e",
 };
 
 export function ThemeToggle() {
@@ -31,7 +31,7 @@ export function ThemeToggle() {
         suppressHydrationWarning
         className="text-fg-muted px-2 py-1 rounded border border-border hover:bg-canvas-elev-hover hover:text-fg transition-colors uppercase tracking-wide"
       >
-        ◐ Theme
+        {"\u25cf"} Theme
       </button>
     );
   }

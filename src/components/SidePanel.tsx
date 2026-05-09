@@ -204,11 +204,13 @@ export function SidePanel({
   const [panelWidth, setPanelWidth] = useState<number | null>(null);
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
-  // Reset all toggles when the displayed node changes.
+  // Reset disclosure state when the displayed node changes.
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect */
     setOutputsOpen(false);
     setProposalsOpen(false);
     setShowAllProposals(false);
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [node?.id]);
 
   // If the viewport shrinks below the panel's current width, clamp.
@@ -329,7 +331,7 @@ export function SidePanel({
           </span>
         )}
 
-        <h2 className="font-serif font-semibold leading-tight text-fg text-[1.9rem] pr-12">
+        <h2 className="font-serif font-semibold leading-tight text-fg text-[1.9rem] pr-12 break-words">
           {node.title}
         </h2>
 
@@ -375,7 +377,7 @@ export function SidePanel({
               className="w-full flex items-center justify-between py-3 text-fg hover:text-selected-hover transition-colors"
               style={UI_TEXT}
             >
-              <span className="uppercase tracking-[0.08em] font-semibold">
+              <span className="min-w-0 text-left uppercase tracking-[0.08em] font-semibold break-words">
                 Some outputs ({node.outputs.length})
               </span>
               <span className="text-fg-muted text-base leading-none" aria-hidden>
@@ -428,7 +430,7 @@ export function SidePanel({
               className="w-full flex items-center justify-between py-3 text-fg hover:text-selected-hover transition-colors"
               style={UI_TEXT}
             >
-              <span className="uppercase tracking-[0.08em] font-semibold">
+              <span className="min-w-0 text-left uppercase tracking-[0.08em] font-semibold break-words">
                 Other proposals for the node ({node.relatedProposals.length})
               </span>
               <span className="text-fg-muted text-base leading-none" aria-hidden>
@@ -502,7 +504,7 @@ export function SidePanel({
         )}
 
         {/* ─── Compact karma column + horizontal action buttons ─────────── */}
-        <div className="flex items-center gap-3 mb-8" style={UI_TEXT}>
+        <div className="flex flex-wrap items-center gap-3 mb-8" style={UI_TEXT}>
           <div
             className="flex flex-col items-center select-none text-fg-muted"
             style={{ minWidth: 26, fontSize: "13px", lineHeight: 1 }}

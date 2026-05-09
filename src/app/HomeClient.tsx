@@ -1,6 +1,8 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import Image from "next/image";
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { CanvasView } from "@/components/CanvasView";
 import type { TreeViewNode } from "@/components/TreeView";
@@ -45,8 +47,6 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
   const router = useRouter();
   const [tree, setTree] = useState(initialTree);
   const [proposeCtx, setProposeCtx] = useState<ProposeContext | null>(null);
-  // Navigation stack of slugs. The top is what the slider is currently
-  // showing. Empty = slider closed. Length > 1 = back button shown.
   const [slugStack, setSlugStack] = useState<string[]>([]);
   const [panelNode, setPanelNode] = useState<SidePanelNode | null>(null);
 
@@ -62,17 +62,20 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
     [],
   );
 
-  // Fetch the currently-selected slug whenever the top of the stack changes.
   useEffect(() => {
     if (!selectedSlug) {
-      setPanelNode(null);
       return;
     }
+
     let cancelled = false;
-    setPanelNode(null);
-    fetchNode(selectedSlug).then((n) => {
-      if (!cancelled) setPanelNode(n);
-    });
+    fetchNode(selectedSlug)
+      .then((n) => {
+        if (!cancelled) setPanelNode(n);
+      })
+      .catch(() => {
+        if (!cancelled) setPanelNode(null);
+      });
+
     return () => {
       cancelled = true;
     };
@@ -94,15 +97,13 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
     if (ok) router.push("/login");
   };
 
-  // ── Stack handlers (called by canvas + side panel) ──────────────────────
-
   const onNodeSelect = (slug: string) => setSlugStack([slug]);
-  const onNavigate = (slug: string) =>
-    setSlugStack((s) => [...s, slug]);
+  const onNavigate = (slug: string) => setSlugStack((s) => [...s, slug]);
   const onBack = () => setSlugStack((s) => s.slice(0, -1));
-  const onClose = () => setSlugStack([]);
-
-  // ── Side-panel actions ──────────────────────────────────────────────────
+  const onClose = () => {
+    setSlugStack([]);
+    setPanelNode(null);
+  };
 
   const handleVote = async (value: 1 | -1) => {
     if (!selectedSlug) return;
@@ -173,9 +174,6 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
     });
     if (res.ok) {
       setProposeCtx(null);
-      // Active tree is unaffected (proposals aren't on the canvas), but the
-      // panel needs to refresh so the new proposal shows under "Other
-      // Proposals" of the targeted node.
       await Promise.all([refreshTree(), refreshPanel()]);
     } else {
       const text = await res.text();
@@ -198,28 +196,21 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
   return (
     <div className="h-full relative bg-canvas">
       <header className="dirty-mirror absolute top-0 left-0 right-0 z-20 h-16 flex items-center px-5 sm:px-7 gap-3">
-        <a
+        <Link
           href="/"
           aria-label="AI Safety Tree home"
           className="shrink-0 inline-flex"
         >
-          {/* Black tree inside a white circle. Parallel trunks at the bottom
-              diverge outward and upward; asymmetric branches with leaves. */}
-          {/* Two leaning trunks, asymmetric, all strokes width 6, square caps,
-              miter joins — no curves anywhere. */}
-          <svg width="32" height="32" viewBox="0 0 100 100" aria-hidden className="block">
-            <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#000000" strokeWidth="2" />
-            <g stroke="#000000" strokeWidth="6" strokeLinecap="square" strokeLinejoin="miter" fill="none">
-              <path d="M55 92 L60 30" />
-              <path d="M60 30 L50 14" />
-              <path d="M60 30 L72 14" />
-              <path d="M48 92 L36 50" />
-              <path d="M41 70 L48 62" />
-              <path d="M36 50 L28 38" />
-              <path d="M36 50 L42 42" />
-            </g>
-          </svg>
-        </a>
+          <Image
+            src="/logo.svg"
+            alt=""
+            width={32}
+            height={32}
+            priority
+            unoptimized
+            className="block h-8 w-8"
+          />
+        </Link>
 
         <h1
           className="font-serif font-normal text-fg uppercase tracking-wide leading-none whitespace-nowrap"
@@ -307,7 +298,7 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
                 className="ml-auto text-fg-muted hover:text-fg w-8 h-8 flex items-center justify-center text-xl leading-none"
                 style={SMALL_TEXT}
               >
-                ×
+                &times;
               </button>
             </div>
             <ProposeForm

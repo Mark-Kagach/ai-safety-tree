@@ -1,18 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" role="img" aria-label="AI Safety Tree">
-  <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#000000" stroke-width="2"/>
-  <g stroke="#000000" stroke-width="6" stroke-linecap="square" stroke-linejoin="miter" fill="none">
-    <!-- Right trunk: tall straight stalk, slight right lean. -->
-    <path d="M55 92 L60 30"/>
-    <!-- Right top Y-fork. -->
-    <path d="M60 30 L50 14"/>
-    <path d="M60 30 L72 14"/>
-
-    <!-- Left trunk: shorter, leans up-left. -->
-    <path d="M48 92 L36 50"/>
-    <!-- Mid-offshoot on the inside (right) of the left trunk. -->
-    <path d="M41 70 L48 62"/>
-    <!-- Small Y-fork at the top of the left trunk. -->
-    <path d="M36 50 L28 38"/>
-    <path d="M36 50 L42 42"/>
-  </g>
+<svg width="280" height="280" viewBox="0 0 280 280" fill="none" xmlns="http://www.w3.org/2000/svg">
+<circle cx="140" cy="140" r="140" fill="white"/>
+<rect x="121" y="158" width="19" height="109" fill="black"/>
+<rect x="147" y="119" width="19" height="148" fill="black"/>
+<rect x="195.101" y="31.6358" width="19" height="99.8208" transform="rotate(28.8075 195.101 31.6358)" fill="black"/>
+<rect x="228.543" y="56.8557" width="19" height="61.1373" transform="rotate(70.255 228.543 56.8557)" fill="black"/>
+<rect x="110.798" y="95" width="19" height="38.4016" transform="rotate(36.4174 110.798 95)" fill="black"/>
+<rect x="126" y="64.8815" width="19" height="59.515" transform="rotate(-21.2345 126 64.8815)" fill="black"/>
+<rect x="59" y="109.757" width="18.4564" height="92.3936" transform="rotate(-48.1915 59 109.757)" fill="black"/>
 </svg>

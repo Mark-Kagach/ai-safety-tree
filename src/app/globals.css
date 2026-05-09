@@ -337,6 +337,10 @@ body {
   --xy-controls-button-color-hover-default: var(--fg);
   --xy-controls-button-border-color-default: var(--border);
   --xy-minimap-background-color-default: var(--canvas-elev);
+  --xy-minimap-mask-background-color-default: var(--canvas);
+  --xy-minimap-node-background-color-default: var(--canvas-soft);
+  --xy-minimap-node-stroke-color-default: var(--border-strong);
+  --xy-minimap-node-stroke-width-default: 1;
   --xy-background-pattern-dots-color-default: var(--border);
 }
 

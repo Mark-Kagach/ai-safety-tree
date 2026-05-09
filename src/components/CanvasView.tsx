@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -296,14 +296,14 @@ export function CanvasView({
     [tree],
   );
 
-  const toggleCollapse = (id: string) => {
+  const toggleCollapse = useCallback((id: string) => {
     setCollapsedIds((prev) => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
       else next.add(id);
       return next;
     });
-  };
+  }, []);
 
   const { nodes, edges } = useMemo(
     () =>
@@ -315,7 +315,34 @@ export function CanvasView({
         toggleCollapse,
         orientation,
       ),
-    [tree, collapsedIds, hasChildrenOriginal, selectedSlug, orientation],
+    [
+      tree,
+      collapsedIds,
+      hasChildrenOriginal,
+      selectedSlug,
+      toggleCollapse,
+      orientation,
+    ],
+  );
+
+  const canvasColors = useMemo(
+    () =>
+      resolvedTheme === "dark"
+        ? {
+            backgroundDots: "#525252",
+            minimapBg: "#1e1e1e",
+            minimapMask: "rgba(38, 38, 38, 0.72)",
+            minimapNode: "#3a3a3a",
+            minimapNodeStroke: "#777777",
+          }
+        : {
+            backgroundDots: "#d8d3c7",
+            minimapBg: "#ffffff",
+            minimapMask: "rgba(248, 244, 238, 0.72)",
+            minimapNode: "#f0ece5",
+            minimapNodeStroke: "#a8a39a",
+          },
+    [resolvedTheme],
   );
 
   const collapseAll = () => setCollapsedIds(new Set(hasChildrenOriginal));
@@ -381,9 +408,17 @@ export function CanvasView({
         maxZoom={2}
         proOptions={{ hideAttribution: true }}
       >
-        <Background gap={28} size={1.4} color="#999999" />
+        <Background gap={28} size={1.4} color={canvasColors.backgroundDots} />
         <Controls showInteractive={false} />
-        <MiniMap pannable zoomable />
+        <MiniMap
+          pannable
+          zoomable
+          bgColor={canvasColors.minimapBg}
+          maskColor={canvasColors.minimapMask}
+          nodeColor={canvasColors.minimapNode}
+          nodeStrokeColor={canvasColors.minimapNodeStroke}
+          nodeStrokeWidth={1}
+        />
       </ReactFlow>
     </div>
   );

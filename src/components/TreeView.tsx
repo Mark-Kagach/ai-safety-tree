@@ -73,11 +73,9 @@ export function TreeView({
 
   useEffect(() => {
     if (!selectedSlug) {
-      setPanelNode(null);
       return;
     }
     let cancelled = false;
-    setPanelNode(null);
     fetchNode(selectedSlug).then((n) => {
       if (!cancelled) setPanelNode(n);
     });
@@ -111,7 +109,10 @@ export function TreeView({
       </ul>
       <SidePanel
         node={panelNode}
-        onClose={() => setSelectedSlug(null)}
+        onClose={() => {
+          setSelectedSlug(null);
+          setPanelNode(null);
+        }}
         onVote={handleVote}
         onComment={handleComment}
       />
