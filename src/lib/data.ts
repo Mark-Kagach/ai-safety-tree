@@ -19,6 +19,9 @@ function parseOutputs(raw: string | null): SidePanelOutput[] {
 
 export async function getTreeForView(): Promise<TreeViewNode[]> {
   const nodes = await prisma.node.findMany({
+    // Only "active" nodes appear on the canvas; "proposed" nodes are
+    // surfaced exclusively under their target's "Other Proposals" panel.
+    where: { status: "active" },
     include: { votes: true },
     orderBy: { createdAt: "asc" },
   });
@@ -86,6 +89,46 @@ export async function getNodeBySlug(
     if (v) userVote = v.value === 1 ? 1 : v.value === -1 ? -1 : 0;
   }
 
+  // Pull all "proposed" nodes that target this one. Two kinds:
+  //   • Siblings → parentId === node.parentId (alternative versions / edits)
+  //   • Children → parentId === node.id (proposed new sub-topics)
+  // We fetch both, sort by computed score desc, and include comment counts.
+  const proposalWhere: {
+    status: "proposed";
+    OR: Array<{ parentId: string | null }>;
+  } = {
+    status: "proposed",
+    OR: [{ parentId: node.id }],
+  };
+  if (node.parentId) proposalWhere.OR.push({ parentId: node.parentId });
+
+  const proposed = await prisma.node.findMany({
+    where: proposalWhere,
+    include: {
+      author: true,
+      votes: true,
+      _count: { select: { comments: true } },
+    },
+  });
+
+  const relatedProposals = proposed
+    // Don't list the node itself in its own proposals.
+    .filter((p) => p.id !== node.id)
+    .map((p) => ({
+      slug: p.slug,
+      title: p.title,
+      authorUsername: p.author.username,
+      score: tallyVotes(
+        p.votes.map((v) => ({
+          userId: v.userId,
+          value: v.value as 1 | -1,
+        })),
+      ),
+      commentCount: p._count.comments,
+      kind: (p.parentId === node.id ? "child" : "edit") as "child" | "edit",
+    }))
+    .sort((a, b) => b.score - a.score);
+
   return {
     id: node.id,
     slug: node.slug,
@@ -94,6 +137,7 @@ export async function getNodeBySlug(
     outputs: parseOutputs(node.outputs),
     authorUsername: node.author.username,
     parentId: node.parentId,
+    status: node.status as "active" | "proposed",
     score,
     alignmentKarma: node.alignmentKarma,
     userVote,
@@ -103,6 +147,7 @@ export async function getNodeBySlug(
       authorUsername: c.author.username,
       createdAt: c.createdAt.toISOString(),
     })),
+    relatedProposals,
   };
 }
 

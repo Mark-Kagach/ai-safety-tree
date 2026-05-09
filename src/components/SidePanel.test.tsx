@@ -10,10 +10,12 @@ const baseNode: SidePanelNode = {
   outputs: [],
   authorUsername: "mark",
   parentId: null,
+  status: "active",
   score: 5,
   alignmentKarma: 0,
   userVote: 0,
   comments: [],
+  relatedProposals: [],
 };
 
 describe("SidePanel", () => {

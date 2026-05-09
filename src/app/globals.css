@@ -21,8 +21,8 @@
   --border-strong: #a8a39a;
   --edge: #888888;
 
-  --selected: #3f4f41;
-  --selected-hover: #4f6151;
+  --selected: #337f0a;
+  --selected-hover: #266206;
 
   --selection: #fff5e0;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -58,8 +58,8 @@
     --border-strong: #525252;
     --edge: #777777;
 
-    --selected: #3f4f41;
-    --selected-hover: #4f6151;
+    --selected: #788e6a;
+    --selected-hover: #8ba37b;
 
     --selection: #3a3520;
     --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -91,8 +91,8 @@
   --border-strong: #a8a39a;
   --edge: #888888;
 
-  --selected: #3f4f41;
-  --selected-hover: #4f6151;
+  --selected: #337f0a;
+  --selected-hover: #266206;
 
   --selection: #fff5e0;
   --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
@@ -120,8 +120,8 @@
   --border-strong: #525252;
   --edge: #777777;
 
-  --selected: #3f4f41;
-  --selected-hover: #4f6151;
+  --selected: #788e6a;
+  --selected-hover: #8ba37b;
 
   --selection: #3a3520;
   --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4);
@@ -189,14 +189,34 @@ body {
   margin-top: 1em;
 }
 
+/* Side-panel body typography per spec.
+   `light-dark()` resolves the colour against the surrounding color-scheme
+   (set on :root / [data-theme="*"]), so it tracks the active theme without
+   needing a separate dark-mode override. The font stack starts with the
+   Adobe-Fonts-style `warnock-pro` token, falling back through Palatino. */
+.slider-body {
+  color: light-dark(rgba(0, 0, 0, 0.87), rgba(255, 255, 255, 0.87));
+  font-size: 18.2px;
+  word-break: break-word;
+  font-family: warnock-pro, Palatino, "Palatino Linotype",
+    "Palatino LT STD", "Book Antiqua", Georgia, serif;
+  font-weight: 400;
+  line-height: 26px;
+}
+
+.slider-body p + p {
+  margin-top: 1em;
+}
+
 /* ─── Dirty-mirror header (light flavour) ────────────────────────────────── */
 
 .dirty-mirror {
   position: relative;
-  background-color: rgba(248, 244, 238, 0.78);
-  -webkit-backdrop-filter: blur(20px) saturate(1.2);
-  backdrop-filter: blur(20px) saturate(1.2);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  /* Lower opacity than before — the canvas behind shows through more. */
+  background-color: rgba(248, 244, 238, 0.5);
+  -webkit-backdrop-filter: blur(18px) saturate(1.15);
+  backdrop-filter: blur(18px) saturate(1.15);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
   overflow: hidden;
 }
 
@@ -232,7 +252,7 @@ body {
 
 @media (prefers-color-scheme: dark) {
   :root .dirty-mirror {
-    background-color: rgba(20, 20, 20, 0.55);
+    background-color: rgba(20, 20, 20, 0.32);
     border-bottom: 1px solid rgba(255, 255, 255, 0.05);
   }
   :root .dirty-mirror::before {
@@ -248,7 +268,7 @@ body {
 }
 
 [data-theme="dark"] .dirty-mirror {
-  background-color: rgba(20, 20, 20, 0.55);
+  background-color: rgba(20, 20, 20, 0.32);
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
 }
 [data-theme="dark"] .dirty-mirror::before {
@@ -263,8 +283,8 @@ body {
 }
 
 [data-theme="light"] .dirty-mirror {
-  background-color: rgba(248, 244, 238, 0.78);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.08);
+  background-color: rgba(248, 244, 238, 0.5);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
 }
 [data-theme="light"] .dirty-mirror::before {
   background-image:

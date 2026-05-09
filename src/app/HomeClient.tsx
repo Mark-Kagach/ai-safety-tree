@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { CanvasView } from "@/components/CanvasView";
 import type { TreeViewNode } from "@/components/TreeView";
@@ -9,7 +9,7 @@ import {
   type ProposeFormParent,
   type ProposeFormPayload,
 } from "@/components/ProposeForm";
-import type { SidePanelNode } from "@/components/SidePanel";
+import { SidePanel, type SidePanelNode } from "@/components/SidePanel";
 import { ThemeToggle } from "@/components/ThemeToggle";
 
 type CurrentUser = { id: string; username: string };
@@ -45,28 +45,48 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
   const router = useRouter();
   const [tree, setTree] = useState(initialTree);
   const [proposeCtx, setProposeCtx] = useState<ProposeContext | null>(null);
-  // Cache the most recently fetched node so the slider's edit/add-child
-  // buttons can pre-fill the propose modal without an extra round-trip.
-  const [lastNode, setLastNode] = useState<SidePanelNode | null>(null);
+  // Navigation stack of slugs. The top is what the slider is currently
+  // showing. Empty = slider closed. Length > 1 = back button shown.
+  const [slugStack, setSlugStack] = useState<string[]>([]);
+  const [panelNode, setPanelNode] = useState<SidePanelNode | null>(null);
 
-  // Stable identity — without useCallback, every HomeClient render produces
-  // a new function, which retriggers CanvasView's useEffect, which cancels
-  // the in-flight fetch via its cleanup. The slider then never opens because
-  // setPanelNode(n) is gated on `!cancelled`.
+  const selectedSlug = slugStack.at(-1) ?? null;
+  const canGoBack = slugStack.length > 1;
+
   const fetchNode = useCallback(
     async (slug: string): Promise<SidePanelNode> => {
       const res = await fetch(`/api/nodes/${slug}`);
       if (!res.ok) throw new Error(`Failed to load node ${slug}`);
-      const json = (await res.json()) as SidePanelNode;
-      setLastNode(json);
-      return json;
+      return res.json();
     },
     [],
   );
 
+  // Fetch the currently-selected slug whenever the top of the stack changes.
+  useEffect(() => {
+    if (!selectedSlug) {
+      setPanelNode(null);
+      return;
+    }
+    let cancelled = false;
+    setPanelNode(null);
+    fetchNode(selectedSlug).then((n) => {
+      if (!cancelled) setPanelNode(n);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedSlug, fetchNode]);
+
   const refreshTree = async () => {
     const res = await fetch("/api/tree");
     if (res.ok) setTree(await res.json());
+  };
+
+  const refreshPanel = async () => {
+    if (!selectedSlug) return;
+    const fresh = await fetchNode(selectedSlug);
+    setPanelNode(fresh);
   };
 
   const requireLogin = (action: string) => {
@@ -74,29 +94,44 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
     if (ok) router.push("/login");
   };
 
-  const handleVote = async (slug: string, value: 1 | -1) => {
+  // ── Stack handlers (called by canvas + side panel) ──────────────────────
+
+  const onNodeSelect = (slug: string) => setSlugStack([slug]);
+  const onNavigate = (slug: string) =>
+    setSlugStack((s) => [...s, slug]);
+  const onBack = () => setSlugStack((s) => s.slice(0, -1));
+  const onClose = () => setSlugStack([]);
+
+  // ── Side-panel actions ──────────────────────────────────────────────────
+
+  const handleVote = async (value: 1 | -1) => {
+    if (!selectedSlug) return;
     if (!currentUser) {
       requireLogin("vote");
       return;
     }
-    const res = await fetch(`/api/nodes/${slug}/vote`, {
+    const res = await fetch(`/api/nodes/${selectedSlug}/vote`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ value }),
     });
-    if (res.ok) await refreshTree();
+    if (res.ok) {
+      await Promise.all([refreshTree(), refreshPanel()]);
+    }
   };
 
-  const handleComment = async (slug: string, body: string) => {
+  const handleComment = async (body: string) => {
+    if (!selectedSlug) return;
     if (!currentUser) {
       requireLogin("comment");
       return;
     }
-    await fetch(`/api/nodes/${slug}/comments`, {
+    const res = await fetch(`/api/nodes/${selectedSlug}/comments`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ body }),
     });
+    if (res.ok) await refreshPanel();
   };
 
   const openProposeNew = () => {
@@ -112,14 +147,12 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
       requireLogin("propose an edit");
       return;
     }
-    if (!lastNode) return;
+    if (!panelNode) return;
     setProposeCtx({
       mode: "edit",
-      // An "edit" creates a sibling of the current node so it can be voted on
-      // alongside the original; full edit-as-first-class is Phase 3.
-      parentId: lastNode.parentId ?? undefined,
-      title: lastNode.title,
-      body: lastNode.body,
+      parentId: panelNode.parentId ?? undefined,
+      title: panelNode.title,
+      body: panelNode.body,
     });
   };
 
@@ -128,8 +161,8 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
       requireLogin("add a child node");
       return;
     }
-    if (!lastNode) return;
-    setProposeCtx({ mode: "add-child", parentId: lastNode.id });
+    if (!panelNode) return;
+    setProposeCtx({ mode: "add-child", parentId: panelNode.id });
   };
 
   const handlePropose = async (payload: ProposeFormPayload) => {
@@ -140,7 +173,10 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
     });
     if (res.ok) {
       setProposeCtx(null);
-      await refreshTree();
+      // Active tree is unaffected (proposals aren't on the canvas), but the
+      // panel needs to refresh so the new proposal shows under "Other
+      // Proposals" of the targeted node.
+      await Promise.all([refreshTree(), refreshPanel()]);
     } else {
       const text = await res.text();
       window.alert(`Failed: ${text}`);
@@ -168,20 +204,21 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
           className="shrink-0 inline-flex"
         >
           {/* Black tree inside a white circle. Parallel trunks at the bottom
-              diverge outward and upward, each ending in a Y of small
-              branches. Hardcoded black/white so the mark reads in both
-              light and dark themes. */}
+              diverge outward and upward; asymmetric branches with leaves. */}
           <svg width="32" height="32" viewBox="0 0 100 100" aria-hidden className="block">
             <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#000000" strokeWidth="2" />
             <g stroke="#000000" strokeLinecap="square" strokeLinejoin="miter" fill="none">
-              <path d="M46 88 L46 70" strokeWidth="6" />
-              <path d="M54 88 L54 70" strokeWidth="6" />
-              <path d="M46 70 L28 38" strokeWidth="6" />
-              <path d="M54 70 L72 38" strokeWidth="6" />
-              <path d="M28 38 L20 22" strokeWidth="5" />
-              <path d="M28 38 L36 22" strokeWidth="5" />
-              <path d="M72 38 L64 22" strokeWidth="5" />
-              <path d="M72 38 L80 22" strokeWidth="5" />
+              <path d="M46 90 L46 58" strokeWidth="6" />
+              <path d="M54 90 L54 58" strokeWidth="6" />
+              <path d="M46 58 L26 28" strokeWidth="6" />
+              <path d="M36 43 L42 38" strokeWidth="4" />
+              <path d="M26 28 L18 14" strokeWidth="5" />
+              <path d="M26 28 L33 16" strokeWidth="5" />
+              <path d="M54 58 L74 36" strokeWidth="6" />
+              <path d="M62 50 L70 46" strokeWidth="4" />
+              <path d="M70 42 L74 38" strokeWidth="4" />
+              <path d="M74 36 L82 22" strokeWidth="5" />
+              <path d="M74 36 L66 22" strokeWidth="5" />
             </g>
           </svg>
         </a>
@@ -233,13 +270,22 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
       <main className="absolute inset-0">
         <CanvasView
           tree={tree}
-          fetchNode={fetchNode}
-          onVote={handleVote}
-          onComment={handleComment}
-          onProposeEdit={openProposeEdit}
-          onAddChild={openAddChild}
+          selectedSlug={selectedSlug}
+          onNodeSelect={onNodeSelect}
         />
       </main>
+
+      <SidePanel
+        node={panelNode}
+        canGoBack={canGoBack}
+        onClose={onClose}
+        onBack={onBack}
+        onNavigate={onNavigate}
+        onVote={handleVote}
+        onComment={handleComment}
+        onProposeEdit={openProposeEdit}
+        onAddChild={openAddChild}
+      />
 
       {proposeCtx && (
         <div

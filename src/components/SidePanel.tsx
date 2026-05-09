@@ -16,6 +16,15 @@ export type SidePanelOutput = {
   authors?: string;
 };
 
+export type RelatedProposal = {
+  slug: string;
+  title: string;
+  authorUsername: string;
+  score: number;
+  commentCount: number;
+  kind: "child" | "edit";
+};
+
 export type SidePanelNode = {
   id: string;
   slug: string;
@@ -24,20 +33,30 @@ export type SidePanelNode = {
   outputs: SidePanelOutput[];
   authorUsername: string;
   parentId: string | null;
+  status: "active" | "proposed";
   score: number;
   alignmentKarma: number;
   userVote: -1 | 0 | 1;
   comments: SidePanelComment[];
+  relatedProposals: RelatedProposal[];
 };
 
 export type SidePanelProps = {
   node: SidePanelNode | null;
+  /** Number of nodes deeper than the root in the navigation stack. When > 0,
+   *  the close button is replaced with a back arrow. */
+  canGoBack?: boolean;
   onClose: () => void;
+  onBack?: () => void;
+  /** Called when the user clicks a proposal row to drill into it. */
+  onNavigate?: (slug: string) => void;
   onVote?: (value: 1 | -1) => void;
   onComment?: (body: string) => void;
   onProposeEdit?: () => void;
   onAddChild?: () => void;
 };
+
+const DEFAULT_PROPOSAL_LIMIT = 5;
 
 function formatDate(iso: string): string {
   try {
@@ -124,9 +143,52 @@ function PlusIcon() {
   );
 }
 
+function CommentIcon() {
+  return (
+    <svg width="12" height="12" viewBox="0 0 14 14" fill="none" aria-hidden>
+      <path
+        d="M2 3 L12 3 L12 10 L8 10 L6 12 L6 10 L2 10 Z"
+        stroke="currentColor"
+        strokeWidth="1.2"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function ArrowLeftIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
+      <path
+        d="M14 5 L7 11 L14 17 M7 11 L18 11"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+function CloseIcon() {
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none" aria-hidden>
+      <path
+        d="M5.5 5.5 L16.5 16.5 M16.5 5.5 L5.5 16.5"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
 export function SidePanel({
   node,
+  canGoBack = false,
   onClose,
+  onBack,
+  onNavigate,
   onVote,
   onComment,
   onProposeEdit,
@@ -134,9 +196,14 @@ export function SidePanel({
 }: SidePanelProps) {
   const [draft, setDraft] = useState("");
   const [outputsOpen, setOutputsOpen] = useState(false);
+  const [proposalsOpen, setProposalsOpen] = useState(false);
+  const [showAllProposals, setShowAllProposals] = useState(false);
 
+  // Reset all toggles when the displayed node changes.
   useEffect(() => {
     setOutputsOpen(false);
+    setProposalsOpen(false);
+    setShowAllProposals(false);
   }, [node?.id]);
 
   if (!node) return null;
@@ -151,36 +218,49 @@ export function SidePanel({
   const upActive = node.userVote === 1;
   const downActive = node.userVote === -1;
 
+  const visibleProposals = showAllProposals
+    ? node.relatedProposals
+    : node.relatedProposals.slice(0, DEFAULT_PROPOSAL_LIMIT);
+  const hasMoreProposals =
+    node.relatedProposals.length > DEFAULT_PROPOSAL_LIMIT;
+
   return (
     <aside
       aria-label={`Details for ${node.title}`}
-      // Width: 682px on desktop, but never more than 33% of the viewport.
-      // Mobile (<sm) takes the full screen.
       className="side-panel-enter fixed right-0 top-16 bottom-0 w-full sm:w-[min(682px,33vw)] bg-side-panel border-l border-border overflow-y-auto z-30 shadow-[var(--shadow-md)]"
     >
-      {/* 24px padding on all sides — text spans the whole inner column. */}
       <div className="p-6 relative">
-        <button
-          type="button"
-          aria-label="Close panel"
-          onClick={onClose}
-          className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full text-fg-muted hover:text-fg hover:bg-canvas-elev-hover flex items-center justify-center transition-colors"
-        >
-          <svg
-            width="22"
-            height="22"
-            viewBox="0 0 22 22"
-            fill="none"
-            aria-hidden
+        {/* The top-right control is either a back arrow (when stacked) or
+            the close cross. */}
+        {canGoBack ? (
+          <button
+            type="button"
+            aria-label="Back to previous node"
+            onClick={onBack}
+            className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full text-fg-muted hover:text-fg hover:bg-canvas-elev-hover flex items-center justify-center transition-colors"
           >
-            <path
-              d="M5.5 5.5 L16.5 16.5 M16.5 5.5 L5.5 16.5"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              strokeLinecap="round"
-            />
-          </svg>
-        </button>
+            <ArrowLeftIcon />
+          </button>
+        ) : (
+          <button
+            type="button"
+            aria-label="Close panel"
+            onClick={onClose}
+            className="absolute top-4 right-4 z-10 w-10 h-10 rounded-full text-fg-muted hover:text-fg hover:bg-canvas-elev-hover flex items-center justify-center transition-colors"
+          >
+            <CloseIcon />
+          </button>
+        )}
+
+        {/* "Proposed" badge for nodes drilled into via Other Proposals. */}
+        {node.status === "proposed" && (
+          <span
+            className="inline-block uppercase tracking-[0.08em] text-selected border border-selected px-2 py-0.5 rounded mb-3"
+            style={{ ...UI_TEXT, fontSize: "11px" }}
+          >
+            Proposal
+          </span>
+        )}
 
         <h2 className="font-serif font-semibold leading-tight text-fg text-[1.9rem] pr-12">
           {node.title}
@@ -194,10 +274,7 @@ export function SidePanel({
           <span className="text-fg">{node.authorUsername}</span>
         </div>
 
-        <div
-          className="prose-lw mb-7 text-fg space-y-4 [&_p]:m-0 [&_strong]:font-semibold [&_strong]:text-fg"
-          style={{ fontSize: "18.2px", lineHeight: 1.65 }}
-        >
+        <div className="slider-body mb-7 [&_strong]:font-semibold [&_p]:my-0">
           <ReactMarkdown
             components={{
               a: ({ href, children }) => (
@@ -213,7 +290,9 @@ export function SidePanel({
               ul: ({ children }) => (
                 <ul className="list-disc pl-6 space-y-1">{children}</ul>
               ),
-              li: ({ children }) => <li className="leading-relaxed">{children}</li>,
+              li: ({ children }) => (
+                <li className="leading-relaxed">{children}</li>
+              ),
             }}
           >
             {node.body}
@@ -221,7 +300,7 @@ export function SidePanel({
         </div>
 
         {node.outputs.length > 0 && (
-          <div className="mb-8 border-y border-border">
+          <div className="mb-6 border-y border-border">
             <button
               type="button"
               onClick={() => setOutputsOpen((v) => !v)}
@@ -232,10 +311,7 @@ export function SidePanel({
               <span className="uppercase tracking-[0.08em] font-semibold">
                 Some outputs ({node.outputs.length})
               </span>
-              <span
-                className="text-fg-muted text-base leading-none"
-                aria-hidden
-              >
+              <span className="text-fg-muted text-base leading-none" aria-hidden>
                 {outputsOpen ? "−" : "+"}
               </span>
             </button>
@@ -273,9 +349,92 @@ export function SidePanel({
           </div>
         )}
 
-        {/* ─── Compact karma column + horizontal action buttons ───────────
-            All three sit on one row. The karma column uses tight spacing
-            and 13px text so its overall height matches the buttons. */}
+        {/* "Other Proposals for the Node" — collapsible. Top 5 by default, with
+            a "View More" button to reveal the rest. Only renders when there
+            actually are proposals on this node. */}
+        {node.relatedProposals.length > 0 && (
+          <div className="mb-6 border-y border-border">
+            <button
+              type="button"
+              onClick={() => setProposalsOpen((v) => !v)}
+              aria-expanded={proposalsOpen}
+              className="w-full flex items-center justify-between py-3 text-fg hover:text-selected-hover transition-colors"
+              style={UI_TEXT}
+            >
+              <span className="uppercase tracking-[0.08em] font-semibold">
+                Other proposals for the node ({node.relatedProposals.length})
+              </span>
+              <span className="text-fg-muted text-base leading-none" aria-hidden>
+                {proposalsOpen ? "−" : "+"}
+              </span>
+            </button>
+            {proposalsOpen && (
+              <ul className="pb-4 pt-1 divide-y divide-border">
+                {visibleProposals.map((p) => (
+                  <li
+                    key={p.slug}
+                    className="py-3 flex items-center gap-3"
+                    style={UI_TEXT}
+                  >
+                    <div className="flex-1 min-w-0">
+                      <button
+                        type="button"
+                        onClick={() => onNavigate?.(p.slug)}
+                        className="block text-left font-serif text-fg hover:text-selected-hover transition-colors truncate"
+                        style={{ fontSize: "16px" }}
+                        title={p.title}
+                      >
+                        {p.title}
+                      </button>
+                      <div className="text-fg-muted text-[12px] mt-0.5 flex items-center gap-1.5">
+                        <span>by</span>
+                        <span className="text-fg">{p.authorUsername}</span>
+                        {p.kind === "child" && (
+                          <>
+                            <span className="text-fg-subtle">·</span>
+                            <span>new child</span>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0 text-fg-muted tabular-nums">
+                      <span
+                        className="flex items-center gap-1"
+                        title={`${p.score} points`}
+                      >
+                        <ChevronUp size={11} />
+                        {p.score}
+                      </span>
+                      <span
+                        className="flex items-center gap-1"
+                        title={`${p.commentCount} comments`}
+                      >
+                        <CommentIcon />
+                        {p.commentCount}
+                      </span>
+                    </div>
+                  </li>
+                ))}
+                {hasMoreProposals && !showAllProposals && (
+                  <li className="pt-3">
+                    <button
+                      type="button"
+                      onClick={() => setShowAllProposals(true)}
+                      className="text-selected hover:text-selected-hover transition-colors uppercase tracking-wide"
+                      style={UI_TEXT}
+                    >
+                      View more (
+                      {node.relatedProposals.length - DEFAULT_PROPOSAL_LIMIT}{" "}
+                      more)
+                    </button>
+                  </li>
+                )}
+              </ul>
+            )}
+          </div>
+        )}
+
+        {/* ─── Compact karma column + horizontal action buttons ─────────── */}
         <div className="flex items-center gap-3 mb-8" style={UI_TEXT}>
           <div
             className="flex flex-col items-center select-none text-fg-muted"

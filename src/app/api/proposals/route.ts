@@ -39,6 +39,9 @@ export async function POST(req: Request) {
       parentId: parent.id,
       authorId: user.id,
       isSeed: false,
+      // Marked as a community proposal — surfaces under the target node's
+      // "Other Proposals" section, not on the main canvas.
+      status: "proposed",
     },
   });
 

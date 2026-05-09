@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import {
   ReactFlow,
   Background,
@@ -13,7 +13,6 @@ import {
   type NodeProps,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { SidePanel, type SidePanelNode } from "./SidePanel";
 import type { TreeViewNode } from "./TreeView";
 import { pruneCollapsed } from "@/domain/collapse";
 import { useTheme } from "@/lib/useTheme";
@@ -22,11 +21,10 @@ export type Orientation = "TB" | "LR";
 
 export type CanvasViewProps = {
   tree: TreeViewNode[];
-  fetchNode: (slug: string) => Promise<SidePanelNode>;
-  onVote?: (slug: string, value: 1 | -1) => Promise<void>;
-  onComment?: (slug: string, body: string) => Promise<void>;
-  onProposeEdit?: () => void;
-  onAddChild?: () => void;
+  /** Slug of the currently-displayed slider node (for highlighting). */
+  selectedSlug: string | null;
+  /** Called when a canvas node is clicked — replaces any open slider. */
+  onNodeSelect: (slug: string) => void;
 };
 
 type FlowData = {
@@ -42,10 +40,8 @@ type FlowData = {
 
 const NODE_W = 220;
 const NODE_H = 78;
-// Vertical (TB) gaps
 const H_GAP = 36;
 const V_GAP = 110;
-// Horizontal (LR) gaps — branches grow right, children stack vertically.
 const H_GAP_LR = 140;
 const V_GAP_LR = 30;
 
@@ -71,6 +67,25 @@ function computeInitialCollapsed(tree: TreeViewNode[]): Set<string> {
   return out;
 }
 
+function cardData(
+  n: TreeViewNode,
+  selectedSlug: string | null,
+  hasChildren: Set<string>,
+  collapsedIds: Set<string>,
+  onToggle: (id: string) => void,
+): FlowData {
+  return {
+    title: n.title,
+    score: n.score,
+    slug: n.slug,
+    nodeId: n.id,
+    isSelected: n.slug === selectedSlug,
+    hasChildren: hasChildren.has(n.id),
+    isCollapsed: collapsedIds.has(n.id),
+    onToggle,
+  };
+}
+
 function layoutTree(
   tree: TreeViewNode[],
   collapsedIds: Set<string>,
@@ -82,9 +97,7 @@ function layoutTree(
   const pruned = pruneCollapsed(tree, collapsedIds);
   const nodes: Node<FlowData>[] = [];
   const edges: Edge[] = [];
-  const isLR = orientation === "LR";
 
-  // ── Vertical (TB) layout ────────────────────────────────────────────────
   function widthOfTB(n: TreeViewNode): number {
     if (n.children.length === 0) return NODE_W;
     const childrenW =
@@ -98,7 +111,13 @@ function layoutTree(
       id: n.id,
       type: "treeCard",
       position: { x, y },
-      data: cardData(n, selectedSlug, hasChildrenOriginal, collapsedIds, onToggle),
+      data: cardData(
+        n,
+        selectedSlug,
+        hasChildrenOriginal,
+        collapsedIds,
+        onToggle,
+      ),
     });
     if (n.children.length > 0) {
       const totalW =
@@ -122,7 +141,6 @@ function layoutTree(
     }
   }
 
-  // ── Horizontal (LR) layout ──────────────────────────────────────────────
   function heightOfLR(n: TreeViewNode): number {
     if (n.children.length === 0) return NODE_H;
     const childrenH =
@@ -136,7 +154,13 @@ function layoutTree(
       id: n.id,
       type: "treeCard",
       position: { x, y },
-      data: cardData(n, selectedSlug, hasChildrenOriginal, collapsedIds, onToggle),
+      data: cardData(
+        n,
+        selectedSlug,
+        hasChildrenOriginal,
+        collapsedIds,
+        onToggle,
+      ),
     });
     if (n.children.length > 0) {
       const totalH =
@@ -160,7 +184,7 @@ function layoutTree(
     }
   }
 
-  if (isLR) {
+  if (orientation === "LR") {
     let rootCursorY = 0;
     for (const root of pruned) {
       const h = heightOfLR(root);
@@ -179,25 +203,6 @@ function layoutTree(
   return { nodes, edges };
 }
 
-function cardData(
-  n: TreeViewNode,
-  selectedSlug: string | null,
-  hasChildren: Set<string>,
-  collapsedIds: Set<string>,
-  onToggle: (id: string) => void,
-): FlowData {
-  return {
-    title: n.title,
-    score: n.score,
-    slug: n.slug,
-    nodeId: n.id,
-    isSelected: n.slug === selectedSlug,
-    hasChildren: hasChildren.has(n.id),
-    isCollapsed: collapsedIds.has(n.id),
-    onToggle,
-  };
-}
-
 function TreeCard({ data }: NodeProps) {
   const d = data as FlowData;
   return (
@@ -209,7 +214,6 @@ function TreeCard({ data }: NodeProps) {
       }`}
       style={{ width: NODE_W, height: NODE_H, borderRadius: 4 }}
     >
-      {/* Handles for both orientations — visually hidden via globals.css. */}
       <Handle id="t" type="target" position={Position.Top} />
       <Handle id="b" type="source" position={Position.Bottom} />
       <Handle id="l" type="target" position={Position.Left} />
@@ -278,14 +282,9 @@ function FlipIcon() {
 
 export function CanvasView({
   tree,
-  fetchNode,
-  onVote,
-  onComment,
-  onProposeEdit,
-  onAddChild,
+  selectedSlug,
+  onNodeSelect,
 }: CanvasViewProps) {
-  const [selectedSlug, setSelectedSlug] = useState<string | null>(null);
-  const [panelNode, setPanelNode] = useState<SidePanelNode | null>(null);
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() =>
     computeInitialCollapsed(tree),
   );
@@ -319,43 +318,6 @@ export function CanvasView({
     [tree, collapsedIds, hasChildrenOriginal, selectedSlug, orientation],
   );
 
-  useEffect(() => {
-    if (!selectedSlug) {
-      setPanelNode(null);
-      return;
-    }
-    let cancelled = false;
-    setPanelNode(null);
-    fetchNode(selectedSlug).then((n) => {
-      if (!cancelled) setPanelNode(n);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [selectedSlug, fetchNode]);
-
-  const refetch = async () => {
-    if (!selectedSlug) return;
-    const fresh = await fetchNode(selectedSlug);
-    setPanelNode(fresh);
-  };
-
-  const handleVote = onVote
-    ? async (value: 1 | -1) => {
-        if (!selectedSlug) return;
-        await onVote(selectedSlug, value);
-        await refetch();
-      }
-    : undefined;
-
-  const handleComment = onComment
-    ? async (body: string) => {
-        if (!selectedSlug) return;
-        await onComment(selectedSlug, body);
-        await refetch();
-      }
-    : undefined;
-
   const collapseAll = () => setCollapsedIds(new Set(hasChildrenOriginal));
   const expandAll = () => setCollapsedIds(new Set());
   const resetView = () => setCollapsedIds(computeInitialCollapsed(tree));
@@ -363,80 +325,66 @@ export function CanvasView({
     setOrientation((o) => (o === "TB" ? "LR" : "TB"));
 
   return (
-    <>
-      <div className="absolute inset-0 bg-canvas">
-        <div
-          className="absolute top-20 left-3 z-10 flex gap-1"
-          style={{ fontFamily: "var(--font-sans)", fontSize: "14px" }}
+    <div className="absolute inset-0 bg-canvas">
+      <div
+        className="absolute top-20 left-3 z-10 flex gap-1"
+        style={{ fontFamily: "var(--font-sans)", fontSize: "14px" }}
+      >
+        <button
+          type="button"
+          onClick={resetView}
+          className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide"
+          title="Show only the first level"
         >
-          <button
-            type="button"
-            onClick={resetView}
-            className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide"
-            title="Show only the first level"
-          >
-            Reset
-          </button>
-          <button
-            type="button"
-            onClick={collapseAll}
-            className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide"
-          >
-            Collapse all
-          </button>
-          <button
-            type="button"
-            onClick={expandAll}
-            className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide"
-          >
-            Expand all
-          </button>
-          <button
-            type="button"
-            onClick={flipOrientation}
-            className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide flex items-center"
-            title={
-              orientation === "TB"
-                ? "Switch to horizontal layout"
-                : "Switch to vertical layout"
-            }
-          >
-            <FlipIcon />
-            {orientation === "TB" ? "Horizontal" : "Vertical"}
-          </button>
-        </div>
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          fitView
-          fitViewOptions={{
-            padding: 0.4,
-            maxZoom: 1,
-            duration: 0,
-          }}
-          colorMode={resolvedTheme}
-          onNodeClick={(_e, node) => {
-            const slug = (node.data as FlowData).slug;
-            setSelectedSlug(slug);
-          }}
-          minZoom={0.1}
-          maxZoom={2}
-          proOptions={{ hideAttribution: true }}
+          Reset
+        </button>
+        <button
+          type="button"
+          onClick={collapseAll}
+          className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide"
         >
-          <Background gap={28} size={1} color="var(--border)" />
-          <Controls showInteractive={false} />
-          <MiniMap pannable zoomable />
-        </ReactFlow>
+          Collapse all
+        </button>
+        <button
+          type="button"
+          onClick={expandAll}
+          className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide"
+        >
+          Expand all
+        </button>
+        <button
+          type="button"
+          onClick={flipOrientation}
+          className="px-3 py-1.5 border border-border bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover rounded-sm transition-colors uppercase tracking-wide flex items-center"
+          title={
+            orientation === "TB"
+              ? "Switch to horizontal layout"
+              : "Switch to vertical layout"
+          }
+        >
+          <FlipIcon />
+          {orientation === "TB" ? "Horizontal" : "Vertical"}
+        </button>
       </div>
-      <SidePanel
-        node={panelNode}
-        onClose={() => setSelectedSlug(null)}
-        onVote={handleVote}
-        onComment={handleComment}
-        onProposeEdit={onProposeEdit}
-        onAddChild={onAddChild}
-      />
-    </>
+      <ReactFlow
+        nodes={nodes}
+        edges={edges}
+        nodeTypes={nodeTypes}
+        fitView
+        fitViewOptions={{ padding: 0.4, maxZoom: 1, duration: 0 }}
+        colorMode={resolvedTheme}
+        onNodeClick={(_e, node) => {
+          const slug = (node.data as FlowData).slug;
+          onNodeSelect(slug);
+        }}
+        minZoom={0.1}
+        maxZoom={2}
+        proOptions={{ hideAttribution: true }}
+      >
+        <Background gap={28} size={1.4} color="#999999" />
+        <Controls showInteractive={false} />
+        <MiniMap pannable zoomable />
+      </ReactFlow>
+    </div>
   );
 }

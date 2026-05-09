@@ -36,6 +36,10 @@ model Node {
   // LessWrong-style "alignment karma" — separate counter from regular
   // karma (which is computed from NodeVote). Stored as a plain int.
   alignmentKarma Int @default(0)
+  // "active" = part of the canonical graph; "proposed" = community-suggested
+  // alternative or new child awaiting acceptance. Active nodes appear on the
+  // canvas; proposed nodes only show under their target's "Other Proposals".
+  status    String  @default("active")
   parentId  String?
   authorId  String
   positionX Float?
@@ -51,6 +55,7 @@ model Node {
   comments Comment[]
 
   @@index([parentId])
+  @@index([status])
 }
 
 model NodeVote {

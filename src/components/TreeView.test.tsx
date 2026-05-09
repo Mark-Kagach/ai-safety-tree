@@ -26,10 +26,12 @@ const makeFetchNode = () =>
       outputs: [],
       authorUsername: "mark",
       parentId: null,
+      status: "active",
       score: 0,
       alignmentKarma: 0,
       userVote: 0,
       comments: [],
+      relatedProposals: [],
     }),
   );
 
