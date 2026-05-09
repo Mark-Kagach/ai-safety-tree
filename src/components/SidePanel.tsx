@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import ReactMarkdown from "react-markdown";
 
 export type SidePanelComment = {
@@ -198,6 +198,11 @@ export function SidePanel({
   const [outputsOpen, setOutputsOpen] = useState(false);
   const [proposalsOpen, setProposalsOpen] = useState(false);
   const [showAllProposals, setShowAllProposals] = useState(false);
+  // null → use the default Tailwind width (`min(682px, 33vw)`). When the
+  // user drags the handle, this becomes a pixel value clamped to
+  // [minWidth, 40vw].
+  const [panelWidth, setPanelWidth] = useState<number | null>(null);
+  const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
 
   // Reset all toggles when the displayed node changes.
   useEffect(() => {
@@ -205,6 +210,52 @@ export function SidePanel({
     setProposalsOpen(false);
     setShowAllProposals(false);
   }, [node?.id]);
+
+  // If the viewport shrinks below the panel's current width, clamp.
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    const onResize = () => {
+      setPanelWidth((w) => {
+        if (w === null) return null;
+        const min = Math.min(682, window.innerWidth * 0.33);
+        const max = window.innerWidth * 0.4;
+        return Math.max(min, Math.min(max, w));
+      });
+    };
+    window.addEventListener("resize", onResize);
+    return () => window.removeEventListener("resize", onResize);
+  }, []);
+
+  const onResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const startWidth =
+      panelWidth ?? Math.min(682, window.innerWidth * 0.33);
+    dragRef.current = { startX: e.clientX, startWidth };
+
+    const onMove = (ev: globalThis.PointerEvent) => {
+      if (!dragRef.current) return;
+      // Slider is anchored on the right; dragging left increases width.
+      const delta = dragRef.current.startX - ev.clientX;
+      const next = dragRef.current.startWidth + delta;
+      const min = Math.min(682, window.innerWidth * 0.33);
+      const max = window.innerWidth * 0.4;
+      setPanelWidth(Math.max(min, Math.min(max, next)));
+    };
+
+    const onEnd = () => {
+      dragRef.current = null;
+      window.removeEventListener("pointermove", onMove);
+      window.removeEventListener("pointerup", onEnd);
+      document.body.style.userSelect = "";
+      document.body.style.cursor = "";
+    };
+
+    document.body.style.userSelect = "none";
+    document.body.style.cursor = "col-resize";
+    window.addEventListener("pointermove", onMove);
+    window.addEventListener("pointerup", onEnd);
+  };
 
   if (!node) return null;
 
@@ -227,8 +278,24 @@ export function SidePanel({
   return (
     <aside
       aria-label={`Details for ${node.title}`}
+      // Default width is `sm:w-[min(682px,33vw)]` (Tailwind class). The
+      // inline style below only kicks in once the user drags the handle.
+      style={
+        panelWidth !== null
+          ? { width: `${panelWidth}px`, maxWidth: "none" }
+          : undefined
+      }
       className="side-panel-enter fixed right-0 top-16 bottom-0 w-full sm:w-[min(682px,33vw)] bg-side-panel border-l border-border overflow-y-auto z-30 shadow-[var(--shadow-md)]"
     >
+      {/* Drag handle on the very left edge of the slider. Hidden on mobile
+          (where the slider takes the full screen). Hover to highlight. */}
+      <div
+        onPointerDown={onResizeStart}
+        role="separator"
+        aria-orientation="vertical"
+        aria-label="Resize panel — drag to widen, max 40% of viewport"
+        className="hidden sm:block absolute left-0 top-0 bottom-0 w-1.5 z-40 cursor-col-resize hover:bg-selected/30 active:bg-selected/50 transition-colors"
+      />
       <div className="p-6 relative">
         {/* The top-right control is either a back arrow (when stacked) or
             the close cross. */}
@@ -545,10 +612,12 @@ export function SidePanel({
               className="font-sans border border-border bg-canvas-soft text-fg p-3 min-h-[110px] focus:outline-none focus:border-fg-muted rounded-sm resize-y"
               style={{ fontSize: "14px", lineHeight: 1.6 }}
             />
+            {/* Post-comment button is a fixed shade of green across both
+                themes — does NOT track --selected. */}
             <button
               type="button"
               onClick={handlePost}
-              className="self-end bg-selected text-white px-4 py-1.5 rounded-sm hover:bg-selected-hover transition-colors uppercase tracking-wide"
+              className="self-end bg-[#5f9b65] hover:bg-[#4f8a55] text-white px-4 py-1.5 rounded-sm transition-colors uppercase tracking-wide"
               style={UI_TEXT}
             >
               Post comment

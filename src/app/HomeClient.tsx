@@ -205,20 +205,18 @@ export function HomeClient({ initialTree, currentUser }: HomeClientProps) {
         >
           {/* Black tree inside a white circle. Parallel trunks at the bottom
               diverge outward and upward; asymmetric branches with leaves. */}
+          {/* Two leaning trunks, asymmetric, all strokes width 6, square caps,
+              miter joins — no curves anywhere. */}
           <svg width="32" height="32" viewBox="0 0 100 100" aria-hidden className="block">
             <circle cx="50" cy="50" r="48" fill="#ffffff" stroke="#000000" strokeWidth="2" />
-            <g stroke="#000000" strokeLinecap="square" strokeLinejoin="miter" fill="none">
-              <path d="M46 90 L46 58" strokeWidth="6" />
-              <path d="M54 90 L54 58" strokeWidth="6" />
-              <path d="M46 58 L26 28" strokeWidth="6" />
-              <path d="M36 43 L42 38" strokeWidth="4" />
-              <path d="M26 28 L18 14" strokeWidth="5" />
-              <path d="M26 28 L33 16" strokeWidth="5" />
-              <path d="M54 58 L74 36" strokeWidth="6" />
-              <path d="M62 50 L70 46" strokeWidth="4" />
-              <path d="M70 42 L74 38" strokeWidth="4" />
-              <path d="M74 36 L82 22" strokeWidth="5" />
-              <path d="M74 36 L66 22" strokeWidth="5" />
+            <g stroke="#000000" strokeWidth="6" strokeLinecap="square" strokeLinejoin="miter" fill="none">
+              <path d="M55 92 L60 30" />
+              <path d="M60 30 L50 14" />
+              <path d="M60 30 L72 14" />
+              <path d="M48 92 L36 50" />
+              <path d="M41 70 L48 62" />
+              <path d="M36 50 L28 38" />
+              <path d="M36 50 L42 42" />
             </g>
           </svg>
         </a>

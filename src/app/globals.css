@@ -212,11 +212,11 @@ body {
 
 .dirty-mirror {
   position: relative;
-  /* Lower opacity than before — the canvas behind shows through more. */
-  background-color: rgba(248, 244, 238, 0.5);
-  -webkit-backdrop-filter: blur(18px) saturate(1.15);
-  backdrop-filter: blur(18px) saturate(1.15);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  /* Header is mostly see-through — canvas shows through clearly. */
+  background-color: rgba(248, 244, 238, 0.32);
+  -webkit-backdrop-filter: blur(16px) saturate(1.1);
+  backdrop-filter: blur(16px) saturate(1.1);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
   overflow: hidden;
 }
 
@@ -252,8 +252,8 @@ body {
 
 @media (prefers-color-scheme: dark) {
   :root .dirty-mirror {
-    background-color: rgba(20, 20, 20, 0.32);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+    background-color: rgba(20, 20, 20, 0.2);
+    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
   }
   :root .dirty-mirror::before {
     background-image:
@@ -268,8 +268,8 @@ body {
 }
 
 [data-theme="dark"] .dirty-mirror {
-  background-color: rgba(20, 20, 20, 0.32);
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  background-color: rgba(20, 20, 20, 0.2);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
 }
 [data-theme="dark"] .dirty-mirror::before {
   background-image:
@@ -283,8 +283,8 @@ body {
 }
 
 [data-theme="light"] .dirty-mirror {
-  background-color: rgba(248, 244, 238, 0.5);
-  border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  background-color: rgba(248, 244, 238, 0.32);
+  border-bottom: 1px solid rgba(0, 0, 0, 0.05);
 }
 [data-theme="light"] .dirty-mirror::before {
   background-image:
