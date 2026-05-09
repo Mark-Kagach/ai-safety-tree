@@ -5,6 +5,29 @@ import { tallyVotes } from "@/domain/votes";
 import type { TreeViewNode } from "@/components/TreeView";
 import type { SidePanelNode, SidePanelOutput } from "@/components/SidePanel";
 import { SEED_AUTHOR, SEED_TREE } from "../../prisma/seed";
+import {
+  SEED_TREE_COMMUNITY,
+  COMMUNITY_PROPOSALS,
+  COMMUNITY_AUTHOR,
+  COMMUNITY_PROPOSERS,
+  flattenProposals,
+} from "../../prisma/seed-community";
+
+// Two parallel seed trees ship with the build — clients pick which one to
+// render via the `?variant=` query string on `/api/tree` and
+// `/api/nodes/:slug`. The "community" tree is read-only seed data; the
+// "shallow" tree may be backed by Postgres in production.
+export type TreeVariant = "shallow" | "community";
+
+const VARIANTS: TreeVariant[] = ["shallow", "community"];
+
+export function parseTreeVariant(v: string | null | undefined): TreeVariant {
+  return v === "community" ? "community" : "shallow";
+}
+
+export function isTreeVariant(v: unknown): v is TreeVariant {
+  return typeof v === "string" && (VARIANTS as string[]).includes(v);
+}
 
 type TreeDbNode = Prisma.NodeGetPayload<{ include: { votes: true } }>;
 type PanelDbNode = Prisma.NodeGetPayload<{
@@ -35,8 +58,9 @@ function parseOutputs(raw: string | null): SidePanelOutput[] {
   }
 }
 
-function fallbackTreeForView(): TreeViewNode[] {
-  const flat: FlatNode[] = SEED_TREE.map((n) => ({
+function fallbackTreeForView(variant: TreeVariant): TreeViewNode[] {
+  const source = variant === "community" ? SEED_TREE_COMMUNITY : SEED_TREE;
+  const flat: FlatNode[] = source.map((n) => ({
     id: n.slug,
     parentId: n.parentSlug,
     title: n.title,
@@ -56,7 +80,12 @@ function fallbackTreeForView(): TreeViewNode[] {
   return tree.map(decorate);
 }
 
-function fallbackNodeBySlug(slug: string): SidePanelNode | null {
+function fallbackNodeBySlug(
+  slug: string,
+  variant: TreeVariant,
+): SidePanelNode | null {
+  if (variant === "community") return communityNodeBySlug(slug);
+
   const seedNode = SEED_TREE.find((n) => n.slug === slug);
   if (!seedNode) return null;
 
@@ -77,6 +106,70 @@ function fallbackNodeBySlug(slug: string): SidePanelNode | null {
   };
 }
 
+function communityNodeBySlug(slug: string): SidePanelNode | null {
+  // Active node lookup
+  const active = SEED_TREE_COMMUNITY.find((n) => n.slug === slug);
+  if (active) {
+    const proposals = COMMUNITY_PROPOSALS[active.slug] ?? [];
+    return {
+      id: active.slug,
+      slug: active.slug,
+      title: active.title,
+      body: active.body,
+      outputs: active.outputs ?? [],
+      authorUsername: COMMUNITY_AUTHOR.username,
+      parentId: active.parentSlug,
+      status: "active",
+      score: 0,
+      alignmentKarma: 0,
+      userVote: 0,
+      comments: [],
+      relatedProposals: proposals.map((p) => ({
+        slug: p.slug,
+        title: p.title,
+        authorUsername: pickProposer(p.slug).username,
+        score: p.score,
+        commentCount: p.commentCount,
+        kind: p.kind,
+      })),
+    };
+  }
+
+  // Proposal-node lookup (when a user clicks into a proposal row)
+  const proposalEntry = flattenProposals().find((p) => p.slug === slug);
+  if (proposalEntry) {
+    const parent = SEED_TREE_COMMUNITY.find(
+      (n) => n.slug === proposalEntry.parentSlug,
+    );
+    return {
+      id: proposalEntry.slug,
+      slug: proposalEntry.slug,
+      title: proposalEntry.title,
+      body: proposalEntry.body,
+      outputs: [],
+      authorUsername: proposalEntry.authorUsername,
+      parentId: parent?.slug ?? null,
+      status: "proposed",
+      score: proposalEntry.score,
+      alignmentKarma: 0,
+      userVote: 0,
+      comments: [],
+      relatedProposals: [],
+    };
+  }
+
+  return null;
+}
+
+// Stable proposer assignment based on the proposal's slug — keeps the same
+// "author" attached across reloads without a database.
+function pickProposer(slug: string): { username: string; displayName: string } {
+  let h = 0;
+  for (let i = 0; i < slug.length; i += 1) h = (h * 31 + slug.charCodeAt(i)) | 0;
+  const idx = Math.abs(h) % COMMUNITY_PROPOSERS.length;
+  return COMMUNITY_PROPOSERS[idx];
+}
+
 function logDbFallback(context: string, error: unknown) {
   console.warn(
     `Database unavailable while loading ${context}; using read-only seed data fallback.`,
@@ -84,7 +177,12 @@ function logDbFallback(context: string, error: unknown) {
   );
 }
 
-export async function getTreeForView(): Promise<TreeViewNode[]> {
+export async function getTreeForView(
+  variant: TreeVariant = "shallow",
+): Promise<TreeViewNode[]> {
+  // The community tree ships as static seed data; never hit the DB.
+  if (variant === "community") return fallbackTreeForView("community");
+
   let nodes: TreeDbNode[];
   try {
     nodes = await prisma.node.findMany({
@@ -96,7 +194,7 @@ export async function getTreeForView(): Promise<TreeViewNode[]> {
     });
   } catch (error) {
     logDbFallback("tree", error);
-    return fallbackTreeForView();
+    return fallbackTreeForView(variant);
   }
 
   const flat: FlatNode[] = nodes.map((n) => ({
@@ -135,7 +233,10 @@ export async function getTreeForView(): Promise<TreeViewNode[]> {
 export async function getNodeBySlug(
   slug: string,
   currentUserId: string | null,
+  variant: TreeVariant = "shallow",
 ): Promise<SidePanelNode | null> {
+  if (variant === "community") return communityNodeBySlug(slug);
+
   let node: PanelDbNode | null;
   try {
     node = await prisma.node.findUnique({
@@ -151,7 +252,7 @@ export async function getNodeBySlug(
     });
   } catch (error) {
     logDbFallback(`node ${slug}`, error);
-    return fallbackNodeBySlug(slug);
+    return fallbackNodeBySlug(slug, variant);
   }
   if (!node) return null;
 
@@ -193,7 +294,7 @@ export async function getNodeBySlug(
     });
   } catch (error) {
     logDbFallback(`related proposals for ${slug}`, error);
-    return fallbackNodeBySlug(slug);
+    return fallbackNodeBySlug(slug, variant);
   }
 
   const relatedProposals = proposed

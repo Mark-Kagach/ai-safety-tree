@@ -21,10 +21,18 @@ export type Orientation = "TB" | "LR";
 
 export type CanvasViewProps = {
   tree: TreeViewNode[];
-  /** Slug of the currently-displayed slider node (for highlighting). */
+  /** Slug of the currently-active (most-recent) slider. Receives the
+   *  strongest highlight on the canvas. */
   selectedSlug: string | null;
-  /** Called when a canvas node is clicked — replaces any open slider. */
+  /** All slugs with an open slider somewhere in the stack. Each gets a
+   *  softer highlight so the user can see what they have open. */
+  openSlugs?: Set<string>;
+  /** Called when a canvas node is clicked — opens a new stacked slider. */
   onNodeSelect: (slug: string) => void;
+  /** Optional label rendered as a small chip in the canvas top-left so the
+   *  user can see which tree they're looking at without scanning the
+   *  header. */
+  variantLabel?: string;
 };
 
 type FlowData = {
@@ -32,7 +40,10 @@ type FlowData = {
   score: number;
   slug: string;
   nodeId: string;
+  /** True for the active (leftmost) slider's node. */
   isSelected: boolean;
+  /** True for any slug that has a slider open in the stack. */
+  isOpen: boolean;
   hasChildren: boolean;
   isCollapsed: boolean;
   onToggle: (id: string) => void;
@@ -70,6 +81,7 @@ function computeInitialCollapsed(tree: TreeViewNode[]): Set<string> {
 function cardData(
   n: TreeViewNode,
   selectedSlug: string | null,
+  openSlugs: Set<string>,
   hasChildren: Set<string>,
   collapsedIds: Set<string>,
   onToggle: (id: string) => void,
@@ -80,6 +92,7 @@ function cardData(
     slug: n.slug,
     nodeId: n.id,
     isSelected: n.slug === selectedSlug,
+    isOpen: openSlugs.has(n.slug),
     hasChildren: hasChildren.has(n.id),
     isCollapsed: collapsedIds.has(n.id),
     onToggle,
@@ -91,6 +104,7 @@ function layoutTree(
   collapsedIds: Set<string>,
   hasChildrenOriginal: Set<string>,
   selectedSlug: string | null,
+  openSlugs: Set<string>,
   onToggle: (id: string) => void,
   orientation: Orientation,
 ): { nodes: Node<FlowData>[]; edges: Edge[] } {
@@ -114,6 +128,7 @@ function layoutTree(
       data: cardData(
         n,
         selectedSlug,
+        openSlugs,
         hasChildrenOriginal,
         collapsedIds,
         onToggle,
@@ -157,6 +172,7 @@ function layoutTree(
       data: cardData(
         n,
         selectedSlug,
+        openSlugs,
         hasChildrenOriginal,
         collapsedIds,
         onToggle,
@@ -205,14 +221,28 @@ function layoutTree(
 
 function TreeCard({ data }: NodeProps) {
   const d = data as FlowData;
+  // Three visual states:
+  //  • selected (active panel): solid selected border + faint tinted bg
+  //  • open (other panel in stack): selected border, no bg tint
+  //  • default: normal border, hover-tinted bg
+  const borderClass = d.isSelected
+    ? "border-selected"
+    : d.isOpen
+      ? "border-selected"
+      : "border-border hover:bg-canvas-elev-hover";
   return (
     <div
-      className={`relative px-4 py-3 transition-colors cursor-pointer shadow-[var(--shadow-sm)] bg-canvas-elev border-2 ${
-        d.isSelected
-          ? "border-selected"
-          : "border-border hover:bg-canvas-elev-hover"
-      }`}
-      style={{ width: NODE_W, height: NODE_H, borderRadius: 4 }}
+      className={`relative px-4 py-3 transition-colors cursor-pointer shadow-[var(--shadow-sm)] bg-canvas-elev border-2 ${borderClass}`}
+      style={{
+        width: NODE_W,
+        height: NODE_H,
+        borderRadius: 4,
+        // Active panel's node gets a slightly tinted background to make it
+        // stand out from the other open slugs.
+        background: d.isSelected
+          ? "color-mix(in srgb, var(--selected) 8%, var(--canvas-elev))"
+          : undefined,
+      }}
     >
       <Handle id="t" type="target" position={Position.Top} />
       <Handle id="b" type="source" position={Position.Bottom} />
@@ -280,16 +310,26 @@ function FlipIcon() {
   );
 }
 
+const EMPTY_SET: Set<string> = new Set();
+
 export function CanvasView({
   tree,
   selectedSlug,
+  openSlugs = EMPTY_SET,
   onNodeSelect,
+  variantLabel,
 }: CanvasViewProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() =>
     computeInitialCollapsed(tree),
   );
   const [orientation, setOrientation] = useState<Orientation>("TB");
   const { resolved: resolvedTheme } = useTheme();
+
+  // The resolved theme doubles as a remount key for React Flow. Without
+  // a clean remount, switching back from dark to light occasionally
+  // leaves the canvas SVG and minimap with stale colours that don't
+  // repaint until the user pans or resizes the window.
+  const themeKey = resolvedTheme;
 
   const hasChildrenOriginal = useMemo(
     () => findNodesWithChildren(tree),
@@ -312,6 +352,7 @@ export function CanvasView({
         collapsedIds,
         hasChildrenOriginal,
         selectedSlug,
+        openSlugs,
         toggleCollapse,
         orientation,
       ),
@@ -320,11 +361,15 @@ export function CanvasView({
       collapsedIds,
       hasChildrenOriginal,
       selectedSlug,
+      openSlugs,
       toggleCollapse,
       orientation,
     ],
   );
 
+  // Both `Background` dot color and `MiniMap` colours are theme-derived.
+  // We compute them off `resolvedTheme` and feed them in by-value because
+  // `var(--…)` references aren't evaluated inside SVG attribute slots.
   const canvasColors = useMemo(
     () =>
       resolvedTheme === "dark"
@@ -354,7 +399,7 @@ export function CanvasView({
   return (
     <div className="absolute inset-0 bg-canvas">
       <div
-        className="absolute top-20 left-3 z-10 flex gap-1"
+        className="absolute top-20 left-3 z-10 flex gap-1 items-center flex-wrap"
         style={{ fontFamily: "var(--font-sans)", fontSize: "14px" }}
       >
         <button
@@ -392,8 +437,19 @@ export function CanvasView({
           <FlipIcon />
           {orientation === "TB" ? "Horizontal" : "Vertical"}
         </button>
+        {variantLabel && (
+          <span
+            className="ml-2 px-2.5 py-1 border border-border bg-canvas-elev text-fg-muted rounded-sm uppercase tracking-wide hidden md:inline"
+            title="Active tree"
+          >
+            {variantLabel}
+          </span>
+        )}
       </div>
       <ReactFlow
+        // Remount on every theme change. Cheap; eliminates the dark→light
+        // glitch where the canvas occasionally renders blank.
+        key={themeKey}
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
@@ -411,6 +467,10 @@ export function CanvasView({
         <Background gap={28} size={1.4} color={canvasColors.backgroundDots} />
         <Controls showInteractive={false} />
         <MiniMap
+          // Forcing remount of the MiniMap on theme change too: its
+          // background and mask colours are baked into inline SVG
+          // attributes that don't re-render when only the prop changes.
+          key={`mm-${themeKey}`}
           pannable
           zoomable
           bgColor={canvasColors.minimapBg}

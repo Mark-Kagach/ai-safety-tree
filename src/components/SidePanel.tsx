@@ -46,6 +46,20 @@ export type SidePanelProps = {
   /** Number of nodes deeper than the root in the navigation stack. When > 0,
    *  the close button is replaced with a back arrow. */
   canGoBack?: boolean;
+  /** Position of this panel in the stack — 0 is the oldest / rightmost,
+   *  larger indices stack progressively to the left. The most-recent panel
+   *  has stackIndex === stackSize - 1. */
+  stackIndex?: number;
+  stackSize?: number;
+  /** Whether this is the most-recent panel (the only one that responds to
+   *  vote / comment / propose). Inactive panels are still interactive for
+   *  navigation and close. */
+  isActive?: boolean;
+  /** Shared panel width in px (null = use default). Lives on the parent
+   *  so dragging the handle on any one panel updates the whole stack
+   *  in lockstep. */
+  width?: number | null;
+  onWidthChange?: (next: number | null) => void;
   onClose: () => void;
   onBack?: () => void;
   /** Called when the user clicks a proposal row to drill into it. */
@@ -186,6 +200,11 @@ function CloseIcon() {
 export function SidePanel({
   node,
   canGoBack = false,
+  stackIndex = 0,
+  stackSize = 1,
+  isActive = true,
+  width = null,
+  onWidthChange,
   onClose,
   onBack,
   onNavigate,
@@ -198,11 +217,29 @@ export function SidePanel({
   const [outputsOpen, setOutputsOpen] = useState(false);
   const [proposalsOpen, setProposalsOpen] = useState(false);
   const [showAllProposals, setShowAllProposals] = useState(false);
-  // null → use the default Tailwind width (`min(682px, 33vw)`). When the
-  // user drags the handle, this becomes a pixel value clamped to
-  // [minWidth, 40vw].
-  const [panelWidth, setPanelWidth] = useState<number | null>(null);
+  // Width is owned by the parent so a stack of panels stays in lockstep
+  // when one of them is dragged — a pixel value (post-drag) or null
+  // (= use the default Tailwind class).
+  const panelWidth = width;
   const dragRef = useRef<{ startX: number; startWidth: number } | null>(null);
+
+  // Enter-animation gate. On first paint the panel is rendered at the
+  // *previous* slot's translateX so its slide-into-place is just the
+  // CSS transition resolving. We flip `mounted` on the next frame so
+  // browsers register the transition. Two RAFs are needed because React
+  // batches initial-render state into the same paint that includes the
+  // mount, so a single RAF would skip the start state.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => {
+    let raf2 = 0;
+    const raf1 = requestAnimationFrame(() => {
+      raf2 = requestAnimationFrame(() => setMounted(true));
+    });
+    return () => {
+      cancelAnimationFrame(raf1);
+      if (raf2) cancelAnimationFrame(raf2);
+    };
+  }, []);
 
   // Reset disclosure state when the displayed node changes.
   useEffect(() => {
@@ -213,22 +250,8 @@ export function SidePanel({
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [node?.id]);
 
-  // If the viewport shrinks below the panel's current width, clamp.
-  useEffect(() => {
-    if (typeof window === "undefined") return;
-    const onResize = () => {
-      setPanelWidth((w) => {
-        if (w === null) return null;
-        const min = Math.min(682, window.innerWidth * 0.33);
-        const max = window.innerWidth * 0.4;
-        return Math.max(min, Math.min(max, w));
-      });
-    };
-    window.addEventListener("resize", onResize);
-    return () => window.removeEventListener("resize", onResize);
-  }, []);
-
   const onResizeStart = (e: ReactPointerEvent<HTMLDivElement>) => {
+    if (!onWidthChange) return;
     e.preventDefault();
     e.stopPropagation();
     const startWidth =
@@ -242,7 +265,7 @@ export function SidePanel({
       const next = dragRef.current.startWidth + delta;
       const min = Math.min(682, window.innerWidth * 0.33);
       const max = window.innerWidth * 0.4;
-      setPanelWidth(Math.max(min, Math.min(max, next)));
+      onWidthChange(Math.max(min, Math.min(max, next)));
     };
 
     const onEnd = () => {
@@ -277,27 +300,63 @@ export function SidePanel({
   const hasMoreProposals =
     node.relatedProposals.length > DEFAULT_PROPOSAL_LIMIT;
 
+  // ─── Stack positioning ────────────────────────────────────────────────
+  //
+  // The panel is anchored at `right: 0` and slid horizontally by its index
+  // — each older panel pushes the next one one panel-width further left.
+  // CSS `transition: transform` handles the smooth shift when an earlier
+  // panel closes and the rest consolidate to the right.
+  //
+  // Newer panels sit *behind* older ones (lower z-index) so a freshly-
+  // opened panel slides in *underneath* the existing rightmost one to its
+  // resting place. Once everything is at rest, panels don't overlap.
+
+  // Resting position: each older panel pushes us one panel-width further
+  // left of the rightmost slot. Enter-animation start position: the slot
+  // *to our right* (i.e., where the previous-newest panel sits — or, for
+  // the very first panel, just off-screen to the right). Sliding from
+  // there into the resting position produces the "card slips in from the
+  // right and tucks under the previous one" effect.
+  const targetTransform = `translateX(calc(var(--side-panel-w) * ${-stackIndex}))`;
+  const startTransform = `translateX(calc(var(--side-panel-w) * ${1 - stackIndex}))`;
+  const zIndex = 30 + (stackSize - 1 - stackIndex);
+
+  const widthCss =
+    panelWidth !== null ? `${panelWidth}px` : "min(682px, 33vw)";
+
   return (
     <aside
       aria-label={`Details for ${node.title}`}
-      // Default width is `sm:w-[min(682px,33vw)]` (Tailwind class). The
-      // inline style below only kicks in once the user drags the handle.
-      style={
-        panelWidth !== null
-          ? { width: `${panelWidth}px`, maxWidth: "none" }
-          : undefined
-      }
-      className="side-panel-enter fixed right-0 top-16 bottom-0 w-full sm:w-[min(682px,33vw)] bg-side-panel border-l border-border overflow-y-auto z-30 shadow-[var(--shadow-md)]"
+      data-stack-index={stackIndex}
+      data-active={isActive ? "true" : "false"}
+      // Stack sliders use a CSS variable for width so the offset math
+      // ("translate left by N panel widths") stays in lockstep with any
+      // drag-resize on this single panel.
+      style={{
+        // The width var is set on this same element so descendants and
+        // siblings stacked from it can reference it.
+        ["--side-panel-w" as string]:
+          panelWidth !== null ? `${panelWidth}px` : "min(682px, 33vw)",
+        width: widthCss,
+        maxWidth: panelWidth !== null ? "none" : undefined,
+        transform: mounted ? targetTransform : startTransform,
+        zIndex,
+      }}
+      className="side-panel-stacked fixed right-0 top-16 bottom-0 w-full sm:w-[min(682px,33vw)] bg-side-panel border-l border-border overflow-y-auto shadow-[var(--shadow-md)] sm:transition-transform sm:duration-[360ms] sm:ease-[cubic-bezier(0.22,1,0.36,1)]"
     >
-      {/* Drag handle on the very left edge of the slider. Hidden on mobile
-          (where the slider takes the full screen). Hover to highlight. */}
-      <div
-        onPointerDown={onResizeStart}
-        role="separator"
-        aria-orientation="vertical"
-        aria-label="Resize panel — drag to widen, max 40% of viewport"
-        className="hidden sm:block absolute left-0 top-0 bottom-0 w-1.5 z-40 cursor-col-resize hover:bg-selected/30 active:bg-selected/50 transition-colors"
-      />
+      {/* Drag handle on the very left edge of the slider. Only the
+          leftmost (active) panel shows it — handles on stacked panels
+          would sit behind the sibling above them. Hidden on mobile,
+          where the slider is full-screen. */}
+      {isActive && onWidthChange && (
+        <div
+          onPointerDown={onResizeStart}
+          role="separator"
+          aria-orientation="vertical"
+          aria-label="Resize panel — drag to widen, max 40% of viewport"
+          className="hidden sm:block absolute left-0 top-0 bottom-0 w-1.5 z-40 cursor-col-resize hover:bg-selected/30 active:bg-selected/50 transition-colors"
+        />
+      )}
       <div className="p-6 relative">
         {/* The top-right control is either a back arrow (when stacked) or
             the close cross. */}
@@ -557,8 +616,13 @@ export function SidePanel({
           <button
             type="button"
             onClick={onProposeEdit}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-fg-muted hover:text-selected-hover hover:bg-canvas-elev-hover transition-colors uppercase tracking-wide whitespace-nowrap"
-            title="Propose an edit to this node"
+            disabled={!onProposeEdit}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-fg-muted hover:text-selected-hover hover:bg-canvas-elev-hover transition-colors uppercase tracking-wide whitespace-nowrap disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
+            title={
+              onProposeEdit
+                ? "Propose an edit to this node"
+                : "Open this panel to suggest edits"
+            }
           >
             <PencilIcon />
             <span>Suggest edit</span>
@@ -566,8 +630,13 @@ export function SidePanel({
           <button
             type="button"
             onClick={onAddChild}
-            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-fg-muted hover:text-selected-hover hover:bg-canvas-elev-hover transition-colors uppercase tracking-wide whitespace-nowrap"
-            title="Add a new node below this one"
+            disabled={!onAddChild}
+            className="flex items-center gap-1.5 px-2 py-1.5 rounded text-fg-muted hover:text-selected-hover hover:bg-canvas-elev-hover transition-colors uppercase tracking-wide whitespace-nowrap disabled:opacity-40 disabled:hover:bg-transparent disabled:hover:text-fg-muted"
+            title={
+              onAddChild
+                ? "Add a new node below this one"
+                : "Open this panel to add a child"
+            }
           >
             <PlusIcon />
             <span>Add child</span>

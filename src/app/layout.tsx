@@ -15,7 +15,11 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    // The blocking themeInitScript writes `data-theme="dark"` (or "light")
+    // before React hydrates so the page paints in the correct theme. That
+    // intentionally mutates the SSR HTML, so suppress the hydration
+    // warning React raises about the mismatched attribute.
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         <script dangerouslySetInnerHTML={{ __html: themeInitScript }} />
       </head>
