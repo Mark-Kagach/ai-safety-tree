@@ -29,10 +29,6 @@ export type CanvasViewProps = {
   openSlugs?: Set<string>;
   /** Called when a canvas node is clicked — opens a new stacked slider. */
   onNodeSelect: (slug: string) => void;
-  /** Optional label rendered as a small chip in the canvas top-left so the
-   *  user can see which tree they're looking at without scanning the
-   *  header. */
-  variantLabel?: string;
 };
 
 type FlowData = {
@@ -317,7 +313,6 @@ export function CanvasView({
   selectedSlug,
   openSlugs = EMPTY_SET,
   onNodeSelect,
-  variantLabel,
 }: CanvasViewProps) {
   const [collapsedIds, setCollapsedIds] = useState<Set<string>>(() =>
     computeInitialCollapsed(tree),
@@ -437,14 +432,6 @@ export function CanvasView({
           <FlipIcon />
           {orientation === "TB" ? "Horizontal" : "Vertical"}
         </button>
-        {variantLabel && (
-          <span
-            className="ml-2 px-2.5 py-1 border border-border bg-canvas-elev text-fg-muted rounded-sm uppercase tracking-wide hidden md:inline"
-            title="Active tree"
-          >
-            {variantLabel}
-          </span>
-        )}
       </div>
       <ReactFlow
         // Remount on every theme change. Cheap; eliminates the dark→light

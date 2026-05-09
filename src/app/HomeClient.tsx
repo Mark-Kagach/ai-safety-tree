@@ -56,11 +56,6 @@ const SMALL_TEXT: React.CSSProperties = {
   fontSize: "14px",
 };
 
-const TREE_LABELS: Record<TreeVariant, string> = {
-  shallow: "Shallow Technical Review Tree",
-  community: "Community-Curated Tree",
-};
-
 export function HomeClient({
   initialShallowTree,
   initialCommunityTree,
@@ -453,7 +448,6 @@ export function HomeClient({
           selectedSlug={activeSlug}
           openSlugs={openSlugs}
           onNodeSelect={onCanvasNodeSelect}
-          variantLabel={TREE_LABELS[variant]}
         />
       </main>
 
