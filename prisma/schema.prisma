@@ -1,0 +1,114 @@
+// AI Safety Tree — Prisma schema (v1)
+// SQLite for dev; swap to Postgres later by changing the datasource provider
+// and re-running migrations.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String   @id @default(cuid())
+  username     String   @unique
+  passwordHash String
+  displayName  String?
+  createdAt    DateTime @default(now())
+
+  nodes         Node[]
+  votes         NodeVote[]
+  comments      Comment[]
+  proposals     Proposal[]
+  proposalVotes ProposalVote[]
+}
+
+model Node {
+  id        String   @id @default(cuid())
+  slug      String   @unique
+  title     String
+  body      String
+  // JSON-serialized list of { title, url?, authors? } — research outputs
+  // displayed as a collapsible section in the side panel.
+  outputs   String?
+  // LessWrong-style "alignment karma" — separate counter from regular
+  // karma (which is computed from NodeVote). Stored as a plain int.
+  alignmentKarma Int @default(0)
+  parentId  String?
+  authorId  String
+  positionX Float?
+  positionY Float?
+  isSeed    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  parent   Node?     @relation("NodeChildren", fields: [parentId], references: [id])
+  children Node[]    @relation("NodeChildren")
+  author   User      @relation(fields: [authorId], references: [id])
+  votes    NodeVote[]
+  comments Comment[]
+
+  @@index([parentId])
+}
+
+model NodeVote {
+  userId    String
+  nodeId    String
+  value     Int
+  createdAt DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+  node Node @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+
+  @@id([userId, nodeId])
+  @@index([nodeId])
+}
+
+model Comment {
+  id              String   @id @default(cuid())
+  nodeId          String
+  authorId        String
+  parentCommentId String?
+  body            String
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  node          Node      @relation(fields: [nodeId], references: [id], onDelete: Cascade)
+  author        User      @relation(fields: [authorId], references: [id])
+  parentComment Comment?  @relation("CommentReplies", fields: [parentCommentId], references: [id])
+  replies       Comment[] @relation("CommentReplies")
+
+  @@index([nodeId])
+}
+
+model Proposal {
+  id            String    @id @default(cuid())
+  kind          String
+  targetNodeId  String?
+  parentNodeId  String?
+  proposedTitle String?
+  proposedBody  String?
+  proposedById  String
+  status        String    @default("open")
+  resolvedAt    DateTime?
+  createdAt     DateTime  @default(now())
+
+  proposedBy User           @relation(fields: [proposedById], references: [id])
+  votes      ProposalVote[]
+
+  @@index([status])
+}
+
+model ProposalVote {
+  userId     String
+  proposalId String
+  value      Int
+  createdAt  DateTime @default(now())
+
+  user     User     @relation(fields: [userId], references: [id])
+  proposal Proposal @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@id([userId, proposalId])
+}
