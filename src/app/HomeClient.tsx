@@ -378,9 +378,12 @@ export function HomeClient({
             type="button"
             onClick={() => switchVariant("shallow")}
             aria-pressed={variant === "shallow"}
+            // Active state intentionally tracks the "Post comment" button
+            // (#5f9b65) rather than --selected, which shifts darker in
+            // light mode and olive-green in dark mode.
             className={`px-3 py-1.5 uppercase tracking-wide transition-colors ${
               variant === "shallow"
-                ? "bg-selected text-white"
+                ? "bg-[#5f9b65] hover:bg-[#4f8a55] text-white"
                 : "bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover"
             }`}
             title="Shallow Technical Review Tree — based on the Arb Research review"
@@ -393,7 +396,7 @@ export function HomeClient({
             aria-pressed={variant === "community"}
             className={`px-3 py-1.5 uppercase tracking-wide transition-colors border-l border-border ${
               variant === "community"
-                ? "bg-selected text-white"
+                ? "bg-[#5f9b65] hover:bg-[#4f8a55] text-white"
                 : "bg-canvas-elev text-fg-muted hover:text-fg hover:bg-canvas-elev-hover"
             }`}
             title="Community-Curated Tree — broader, with proposed sub-topics throughout"
